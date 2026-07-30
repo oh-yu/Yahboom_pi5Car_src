@@ -1,4 +1,3 @@
-<?xml version="1.0" encoding="utf-8"?>
 <!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
      Commit Version: 1.6.0-1-g15f4949  Build Version: 1.6.7594.29634
      For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
@@ -148,7 +147,7 @@
     <child
       link="robot1/yq_Link" />
     <axis
-      xyz="0 -1 0" />
+      xyz="0 1 0" />
   </joint>
   <link
     name="robot1/yh_Link">
@@ -201,7 +200,7 @@
     <child
       link="robot1/yh_Link" />
     <axis
-      xyz="0 -1 0" />
+      xyz="0 1 0" />
   </joint>
   <link
     name="robot1/zh_Link">
@@ -478,4 +477,99 @@
       effort="0"
       velocity="0" />
   </joint>
+
+  <!-- ============================================================ -->
+  <!-- 差動二輪駆動 (Gazebo Classic 用) -->
+  <!--   左側車輪: zq_Joint (前左) / zh_Joint (後左)                  -->
+  <!--   右側車輪: yq_Joint (前右) / yh_Joint (後右)                  -->
+  <!--   ROS 2 トピック:                                              -->
+  <!--     購読: /cmd_vel  (geometry_msgs/Twist)                     -->
+  <!--     配信: /odom     (nav_msgs/Odometry)                       -->
+  <!--     TF:   odom -> base_footprint                              -->
+  <!-- ============================================================ -->
+
+  <!-- base_footprint (Odometry 基準リンク) -->
+  <link name="robot1/base_footprint"/>
+  <joint name="robot1/base_footprint_joint" type="fixed">
+    <origin xyz="0 0 0.05375" rpy="0 0 0"/>
+    <parent link="robot1/base_footprint"/>
+    <child  link="robot1/base_link"/>
+  </joint>
+
+  <!-- 車輪の摩擦設定 (Gazebo) -->
+  <gazebo reference="robot1/zq_Link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
+    <material>Gazebo/Black</material>
+  </gazebo>
+  <gazebo reference="robot1/yq_Link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
+    <material>Gazebo/Black</material>
+  </gazebo>
+  <gazebo reference="robot1/zh_Link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
+    <material>Gazebo/Black</material>
+  </gazebo>
+  <gazebo reference="robot1/yh_Link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="robot1/base_link">
+    <material>Gazebo/White</material>
+  </gazebo>
+
+  <!-- 差動駆動プラグイン -->
+  <gazebo>
+    <plugin name="diff_drive_controller" filename="libgazebo_ros_diff_drive.so">
+      <ros>
+        <namespace>/</namespace>
+        <remapping>cmd_vel:=cmd_vel</remapping>
+        <remapping>odom:=odom</remapping>
+      </ros>
+
+      <!-- 2 輪ずつ両側の車輪関節を指定 -->
+      <num_wheel_pairs>2</num_wheel_pairs>
+
+      <!-- ペア 1: 前輪 -->
+      <left_joint>robot1/zq_Joint</left_joint>
+      <right_joint>robot1/yq_Joint</right_joint>
+      <!-- ペア 2: 後輪 -->
+      <left_joint>robot1/zh_Joint</left_joint>
+      <right_joint>robot1/yh_Joint</right_joint>
+
+      <!-- 車輪間距離 [m] (両ペア共通) -->
+      <wheel_separation>0.135</wheel_separation>
+      <wheel_separation>0.135</wheel_separation>
+      <!-- 車輪直径 [m] (両ペア共通) -->
+      <wheel_diameter>0.065</wheel_diameter>
+      <wheel_diameter>0.065</wheel_diameter>
+
+      <!-- 動的パラメータ -->
+      <max_wheel_torque>5.0</max_wheel_torque>
+      <max_wheel_acceleration>2.0</max_wheel_acceleration>
+
+      <!-- odom / TF 出力 -->
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <publish_wheel_tf>false</publish_wheel_tf>
+
+      <odometry_frame>odom</odometry_frame>
+      <robot_base_frame>robot1/base_footprint</robot_base_frame>
+
+      <update_rate>50</update_rate>
+    </plugin>
+  </gazebo>
+
 </robot>
