@@ -27,6 +27,7 @@ setup(
             'train = yahboomcar_rl.train:main',
             'evaluate = yahboomcar_rl.evaluate:main',
             'random_agent = yahboomcar_rl.random_agent:main',
+            'demo_reach = yahboomcar_rl.demo_reach:main',
         ],
     },
 )

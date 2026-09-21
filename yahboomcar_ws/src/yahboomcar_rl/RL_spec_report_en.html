@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>yahboomcar_rl Reinforcement Learning Specification Report</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#161d2e; --panel2:#1d2740; --ink:#e8edf7; --sub:#9fb0cf;
+    --acc:#4da3ff; --acc2:#57e3a3; --warn:#ffb454; --bad:#ff6b6b; --line:#2a3550;
+    --code:#0b1020;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    line-height:1.7;font-size:15px}
+  header{padding:34px 40px;background:linear-gradient(120deg,#182444,#0f1420);
+    border-bottom:1px solid var(--line)}
+  header h1{margin:0 0 6px;font-size:26px}
+  header .sub{color:var(--sub);font-size:14px}
+  .tag{display:inline-block;background:var(--panel2);color:var(--acc);
+    border:1px solid var(--line);border-radius:20px;padding:2px 12px;font-size:12px;margin-right:6px}
+  nav{position:sticky;top:0;z-index:9;background:#0c111c;border-bottom:1px solid var(--line);
+    padding:10px 40px;display:flex;flex-wrap:wrap;gap:8px}
+  nav a{color:var(--sub);text-decoration:none;font-size:13px;padding:4px 10px;border-radius:6px}
+  nav a:hover{background:var(--panel2);color:var(--ink)}
+  main{max-width:1080px;margin:0 auto;padding:30px 40px 80px}
+  section{margin:38px 0}
+  h2{font-size:21px;border-left:5px solid var(--acc);padding-left:12px;margin:0 0 14px}
+  h3{font-size:16px;color:var(--acc2);margin:22px 0 8px}
+  p{margin:8px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:14px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:820px){.grid2,.grid3{grid-template-columns:1fr}}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--acc)}
+  td code,p code,li code{background:var(--code);color:var(--acc2);padding:1px 6px;border-radius:5px;font-size:12.5px}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    overflow:auto;font-size:12.5px;color:#d7e3ff}
+  ul,ol{margin:8px 0 8px 4px;padding-left:22px}
+  li{margin:4px 0}
+  .pill{display:inline-block;padding:1px 9px;border-radius:12px;font-size:12px;font-weight:600}
+  .pill.g{background:rgba(87,227,163,.15);color:var(--acc2)}
+  .pill.b{background:rgba(77,163,255,.15);color:var(--acc)}
+  .pill.w{background:rgba(255,180,84,.15);color:var(--warn)}
+  .pill.r{background:rgba(255,107,107,.15);color:var(--bad)}
+  .note{border-left:4px solid var(--warn);background:rgba(255,180,84,.08);padding:10px 14px;border-radius:0 8px 8px 0}
+  .kv{font-size:13px;color:var(--sub)}
+  .kv b{color:var(--ink)}
+  figure{margin:16px 0}
+  figcaption{color:var(--sub);font-size:12.5px;margin-top:6px;text-align:center}
+  svg{width:100%;height:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+  .mono{font-family:"Consolas","SFMono-Regular",monospace}
+  footer{color:var(--sub);font-size:12px;text-align:center;padding:24px;border-top:1px solid var(--line)}
+  .eq{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 18px;
+    font-family:"Consolas",monospace;color:#d7e3ff;overflow:auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>yahboomcar_rl — Reinforcement Learning Specification Report</h1>
+  <div class="sub">Yahboom pi5 Car / Goal-Reaching RL package on ROS2 (Humble) + Gazebo Classic</div>
+  <div style="margin-top:12px">
+    <span class="tag">ROS2 Humble</span><span class="tag">Gazebo Classic</span>
+    <span class="tag">Gymnasium</span><span class="tag">Stable-Baselines3</span>
+    <span class="tag">PPO / SAC</span>
+  </div>
+</header>
+
+<nav>
+  <a href="#s1">1. Overview</a>
+  <a href="#s2">2. End-to-end Flow</a>
+  <a href="#s3">3. System Architecture</a>
+  <a href="#s4">4. RL Formulation (MDP)</a>
+  <a href="#spid">4.5 PID &amp; RL</a>
+  <a href="#s5">5. Detailed Spec</a>
+  <a href="#s6">6. Reset / Goal Placement</a>
+  <a href="#s7">7. How to Run</a>
+</nav>
+
+<main>
+
+<!-- ============ 1. Overview ============ -->
+<section id="s1">
+  <h2>1. Package Overview</h2>
+  <div class="card">
+    <p><b>Purpose:</b> A minimal sample that drives a differential-drive robot (Yahboom pi5 Car) in Gazebo and
+    learns, via reinforcement learning, a policy that <b>autonomously reaches a randomly placed goal</b>.</p>
+    <p><b>Design philosophy:</b> The core idea is to wrap ROS2 communication
+    (<code>cmd_vel</code> publish / <code>odom</code> subscribe) in the Gymnasium <code>Env</code> interface so that
+    Stable-Baselines3 PPO / SAC can be applied as-is.
+    Reset uses <code>/reset_simulation</code>, and the goal marker is <b>re-created every episode via delete&rarr;spawn</b>,
+    giving a <b>simple and deterministic</b> design with room to grow toward a future <b>digital twin (Sim-to-Real)</b>.</p>
+    <div class="grid3" style="margin-top:12px">
+      <div><span class="pill b">Env</span><div class="kv"><code>gazebo_env.py</code><br>Gym&times;ROS2 wrapper</div></div>
+      <div><span class="pill g">Train</span><div class="kv"><code>train.py</code><br>PPO/SAC training</div></div>
+      <div><span class="pill g">Eval</span><div class="kv"><code>evaluate.py</code><br>validate trained policy</div></div>
+      <div><span class="pill w">Check</span><div class="kv"><code>random_agent.py</code><br>env sanity check</div></div>
+      <div><span class="pill r">Verify</span><div class="kv"><code>demo_reach.py</code><br>reliable reach via P-control</div></div>
+      <div><span class="pill w">Launch</span><div class="kv"><code>goal_reach_launch.py</code><br>Gazebo+RL together</div></div>
+      <div><span class="pill b">Config</span><div class="kv"><code>EnvConfig</code><br>all hyperparameters</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2. End-to-end Flow ============ -->
+<section id="s2">
+  <h2>2. End-to-end Processing Flow</h2>
+  <p>Training is the standard RL loop: repeat episodes, and at each step cycle through
+  <span class="pill b">observation &rarr; action &rarr; reward</span>.
+  The figure below gives a bird's-eye view of one episode and the detail of one internal step (control period 0.1s).</p>
+
+  <figure>
+  <svg viewBox="0 0 1040 560" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+    <defs>
+      <marker id="ar" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#4da3ff"/>
+      </marker>
+      <marker id="arg" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#57e3a3"/>
+      </marker>
+    </defs>
+    <style>
+      .box{fill:#1d2740;stroke:#2a3550;rx:10}
+      .t{fill:#e8edf7;font-size:13px}
+      .tc{fill:#e8edf7;font-size:13px;text-anchor:middle}
+      .s{fill:#9fb0cf;font-size:11px;text-anchor:middle}
+      .l{stroke:#4da3ff;stroke-width:2;fill:none}
+      .lg{stroke:#57e3a3;stroke-width:2;fill:none}
+      .lbl{fill:#9fb0cf;font-size:11px;text-anchor:middle}
+    </style>
+
+    <!-- Start -->
+    <rect class="box" x="40" y="30" width="180" height="46" rx="10"/>
+    <text class="tc" x="130" y="52">Start (train.py)</text>
+    <text class="s" x="130" y="68">build Env + PPO/SAC</text>
+
+    <!-- reset -->
+    <rect class="box" x="40" y="120" width="180" height="70" rx="10" fill="#233255"/>
+    <text class="tc" x="130" y="145">reset()</text>
+    <text class="s" x="130" y="162">robot back to origin</text>
+    <text class="s" x="130" y="178">sample/place goal</text>
+
+    <line class="l" x1="130" y1="76" x2="130" y2="120" marker-end="url(#ar)"/>
+
+    <!-- step loop box -->
+    <rect x="300" y="95" width="700" height="230" rx="14" fill="#131a2b" stroke="#2a3550" stroke-dasharray="5 5"/>
+    <text x="315" y="118" fill="#57e3a3" font-size="13" font-weight="700">one step loop (step_dt = 0.1s, up to max_steps = 400)</text>
+
+    <rect class="box" x="320" y="135" width="150" height="56" rx="9"/>
+    <text class="tc" x="395" y="158">policy &#960;(a|s)</text>
+    <text class="s" x="395" y="176">obs&rarr;action (2-D)</text>
+
+    <rect class="box" x="510" y="135" width="160" height="56" rx="9"/>
+    <text class="tc" x="590" y="156">action to cmd_vel</text>
+    <text class="s" x="590" y="173">&#177;0.3m/s, &#177;1.0rad/s</text>
+
+    <rect class="box" x="710" y="135" width="150" height="56" rx="9"/>
+    <text class="tc" x="785" y="156">Gazebo physics</text>
+    <text class="s" x="785" y="173">spin for 0.1s</text>
+
+    <rect class="box" x="710" y="235" width="150" height="60" rx="9"/>
+    <text class="tc" x="785" y="258">receive odom</text>
+    <text class="s" x="785" y="275">x,y,yaw,v,&#969;</text>
+
+    <rect class="box" x="510" y="235" width="160" height="60" rx="9"/>
+    <text class="tc" x="590" y="258">build obs</text>
+    <text class="s" x="590" y="275">7-D vector</text>
+
+    <rect class="box" x="320" y="235" width="150" height="60" rx="9"/>
+    <text class="tc" x="395" y="255">reward + done check</text>
+    <text class="s" x="395" y="272">reward, done</text>
+
+    <line class="l" x1="470" y1="163" x2="510" y2="163" marker-end="url(#ar)"/>
+    <line class="l" x1="670" y1="163" x2="710" y2="163" marker-end="url(#ar)"/>
+    <line class="l" x1="785" y1="191" x2="785" y2="235" marker-end="url(#ar)"/>
+    <line class="l" x1="710" y1="265" x2="670" y2="265" marker-end="url(#ar)"/>
+    <line class="l" x1="510" y1="265" x2="470" y2="265" marker-end="url(#ar)"/>
+    <!-- loop back -->
+    <path class="l" d="M395,235 L395,210 L395,191" marker-end="url(#ar)"/>
+    <text class="lbl" x="410" y="216">continue</text>
+
+    <line class="l" x1="220" y1="155" x2="320" y2="160" marker-end="url(#ar)"/>
+
+    <!-- done branch -->
+    <rect class="box" x="320" y="380" width="330" height="56" rx="9" fill="#233255"/>
+    <text class="tc" x="485" y="403">done check (terminated / truncated)</text>
+    <text class="s" x="485" y="421">reached / out-of-bounds / timeout (400 steps)</text>
+    <line class="l" x1="395" y1="295" x2="395" y2="380" marker-end="url(#ar)"/>
+    <text class="lbl" x="360" y="340">done=True</text>
+
+    <!-- to update / next episode -->
+    <rect class="box" x="720" y="380" width="280" height="56" rx="9"/>
+    <text class="tc" x="860" y="403">policy update (inside SB3)</text>
+    <text class="s" x="860" y="421">collect rollout &rarr; gradient step</text>
+    <line class="lg" x1="650" y1="408" x2="720" y2="408" marker-end="url(#arg)"/>
+
+    <!-- next episode -->
+    <path class="lg" d="M485,436 L485,490 L130,490 L130,190" marker-end="url(#arg)"/>
+    <text class="lbl" x="300" y="508">next episode reset() (repeat until total_timesteps)</text>
+
+    <!-- finish -->
+    <rect class="box" x="720" y="480" width="280" height="46" rx="10" fill="#1a3320" stroke="#2f6b45"/>
+    <text class="tc" x="860" y="508">timesteps reached &rarr; save model (.zip)</text>
+    <path class="lg" d="M860,436 L860,480" marker-end="url(#arg)"/>
+  </svg>
+  <figcaption>Fig 1: Full training flow (blue = per-step data flow, green = episode/training control flow)</figcaption>
+  </figure>
+
+  <div class="card">
+    <h3>Logic at a glance (key points)</h3>
+    <ul>
+      <li><b>The env is a ROS2 node:</b> inside <code>step()</code> it publishes <code>cmd_vel</code>, spins <code>rclpy.spin_once</code> for <code>step_dt</code>, and reflects <code>odom</code>. A time-driven pseudo-synchronization.</li>
+      <li><b>Reward is mainly distance-progress shaping:</b> reward is proportional to "how much closer to the goal than the previous step", which trains faster than a sparse reach bonus alone.</li>
+      <li><b>Three termination paths:</b> reached (<span class="pill g">success</span>) and out-of-bounds (<span class="pill r">fail</span>) = <code>terminated</code>; exceeding 400 steps (<span class="pill w">timeout</span>) = <code>truncated</code>.</li>
+      <li><b>Reset is simple and deterministic:</b> <code>/reset_simulation</code> initializes the world, and the goal is spawned <b>only after the reset has been asynchronously applied</b>. The same procedure is used for every episode to prevent missed rendering.</li>
+      <li><b>Env shared across train/eval/check:</b> every script uses the same <code>YahboomGoalEnv</code>, guaranteeing consistent behavior.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 3. System Architecture ============ -->
+<section id="s3">
+  <h2>3. System Architecture (ROS2 topology)</h2>
+  <p>The following topics/services flow between the RL node (<code>YahboomGoalEnv</code>) and Gazebo.</p>
+
+  <figure>
+  <svg viewBox="0 0 1000 380" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+    <defs>
+      <marker id="a2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#4da3ff"/></marker>
+      <marker id="a3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#57e3a3"/></marker>
+      <marker id="a4" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#ffb454"/></marker>
+    </defs>
+    <style>
+      .nb{fill:#1d2740;stroke:#4da3ff;stroke-width:2;rx:12}
+      .gb{fill:#1d2740;stroke:#57e3a3;stroke-width:2;rx:12}
+      .rb{fill:#131a2b;stroke:#2a3550;rx:10}
+      .tt{fill:#e8edf7;font-size:13px;text-anchor:middle}
+      .ss{fill:#9fb0cf;font-size:11px;text-anchor:middle}
+    </style>
+
+    <!-- RL Node -->
+    <rect class="nb" x="40" y="120" width="240" height="140" rx="12"/>
+    <text class="tt" x="160" y="150" font-weight="700">RL node</text>
+    <text class="ss" x="160" y="168">YahboomGoalEnv</text>
+    <text class="ss" x="160" y="192">- policy &#960; (PPO/SAC)</text>
+    <text class="ss" x="160" y="210">- reward / done check</text>
+    <text class="ss" x="160" y="228">- obs generation</text>
+
+    <!-- Gazebo -->
+    <rect class="gb" x="720" y="120" width="240" height="140" rx="12"/>
+    <text class="tt" x="840" y="150" font-weight="700">Gazebo Classic</text>
+    <text class="ss" x="840" y="168">display_gazebo.launch.py</text>
+    <text class="ss" x="840" y="192">- diff-drive plugin</text>
+    <text class="ss" x="840" y="210">- physics simulation</text>
+    <text class="ss" x="840" y="228">- robot: micro4_0</text>
+
+    <!-- cmd_vel -->
+    <line class="l" x1="280" y1="150" x2="720" y2="150" stroke="#4da3ff" stroke-width="2" marker-end="url(#a2)"/>
+    <rect class="rb" x="410" y="132" width="180" height="26"/>
+    <text class="ss" x="500" y="149">/cmd_vel (Twist) &rarr;</text>
+
+    <!-- odom -->
+    <line x1="720" y1="200" x2="280" y2="200" stroke="#4da3ff" stroke-width="2" marker-end="url(#a2)"/>
+    <rect class="rb" x="410" y="186" width="180" height="26"/>
+    <text class="ss" x="500" y="203">&larr; /odom (Odometry)</text>
+
+    <!-- services -->
+    <line x1="280" y1="240" x2="720" y2="240" stroke="#ffb454" stroke-width="2" marker-end="url(#a4)"/>
+    <rect class="rb" x="360" y="225" width="280" height="26"/>
+    <text class="ss" x="500" y="242">/reset_simulation &#183; /spawn_entity &#183; /delete_entity</text>
+
+    <!-- rviz -->
+    <rect class="rb" x="40" y="300" width="240" height="50"/>
+    <text class="tt" x="160" y="322">RViz2</text>
+    <text class="ss" x="160" y="340">rl_goal_marker (red sphere) viz</text>
+    <line x1="160" y1="260" x2="160" y2="300" stroke="#57e3a3" stroke-width="2" marker-end="url(#a3)"/>
+    <text class="ss" x="230" y="285">Marker publish</text>
+
+    <!-- goal entity note -->
+    <rect class="rb" x="720" y="300" width="240" height="50"/>
+    <text class="tt" x="840" y="322">rl_goal entity</text>
+    <text class="ss" x="840" y="340">red cylinder (SDF spawn)</text>
+    <line x1="840" y1="260" x2="840" y2="300" stroke="#ffb454" stroke-width="2" marker-end="url(#a4)"/>
+  </svg>
+  <figcaption>Fig 2: ROS2 communication topology (blue = topics, orange = services, green = visualization)</figcaption>
+  </figure>
+
+  <table>
+    <tr><th>Kind</th><th>Name</th><th>Type</th><th>Direction</th><th>Role</th></tr>
+    <tr><td>Topic</td><td><code>cmd_vel</code></td><td>geometry_msgs/Twist</td><td>Env&rarr;Gazebo (pub)</td><td>linear / angular velocity command</td></tr>
+    <tr><td>Topic</td><td><code>odom</code></td><td>nav_msgs/Odometry</td><td>Gazebo&rarr;Env (sub)</td><td>self pose / orientation / velocity</td></tr>
+    <tr><td>Topic</td><td><code>rl_goal_marker</code></td><td>visualization_msgs/Marker</td><td>Env&rarr;RViz (pub)</td><td>red sphere showing goal position</td></tr>
+    <tr><td>Service</td><td><code>/reset_simulation</code></td><td>std_srvs/Empty</td><td>Env&rarr;Gazebo</td><td>reset simulation to origin</td></tr>
+    <tr><td>Service</td><td><code>/spawn_entity</code></td><td>gazebo_msgs/SpawnEntity</td><td>Env&rarr;Gazebo</td><td>spawn the red goal cylinder</td></tr>
+    <tr><td>Service</td><td><code>/delete_entity</code></td><td>gazebo_msgs/DeleteEntity</td><td>Env&rarr;Gazebo</td><td>delete the goal entity</td></tr>
+  </table>
+  <div class="note">QoS is <code>RELIABLE / KEEP_LAST / depth=10</code>. <code>rclpy</code> is <code>init()</code>-ed only when not yet initialized, so multiple launches are handled safely.
+  <br><b>Plugins required when starting Gazebo:</b> reset services need <code>libgazebo_ros_init.so</code>; spawn/delete services need <code>libgazebo_ros_factory.so</code>.
+  A bare <code>gazebo</code> launch does not load these, so <code>/reset_simulation</code> etc. will not appear &mdash; prefer launching via
+  <code>ros2 launch yahboomcar_description display_gazebo.launch.py</code>.</div>
+</section>
+
+<!-- ============ 4. RL Formulation ============ -->
+<section id="s4">
+  <h2>4. RL Formulation (MDP)</h2>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>State space S (7-D, continuous)</h3>
+      <p><code>observation_space</code> is a <code>Box</code> (symmetric lower/upper bounds below).</p>
+      <table>
+        <tr><th>#</th><th>Element</th><th>Meaning</th></tr>
+        <tr><td>0</td><td><code>dx = gx - x</code></td><td>x offset to goal</td></tr>
+        <tr><td>1</td><td><code>dy = gy - y</code></td><td>y offset to goal</td></tr>
+        <tr><td>2</td><td><code>dist</code></td><td>straight-line distance to goal</td></tr>
+        <tr><td>3</td><td><code>cos(heading_err)</code></td><td>cos of heading error</td></tr>
+        <tr><td>4</td><td><code>sin(heading_err)</code></td><td>sin of heading error</td></tr>
+        <tr><td>5</td><td><code>v</code></td><td>current linear velocity</td></tr>
+        <tr><td>6</td><td><code>&#969;</code></td><td>current angular velocity</td></tr>
+      </table>
+      <p class="kv">heading error = <code>atan2(dy,dx) &minus; yaw</code>, normalized to [-&#960;,&#960;] and expressed as cos/sin to avoid angular discontinuity.</p>
+    </div>
+
+    <div class="card">
+      <h3>Action space A (2-D, continuous)</h3>
+      <p><code>action_space</code> is a <code>Box</code> with each component in <code>[-1, 1]</code>, scaled inside <code>step()</code>.</p>
+      <div class="eq">linear.x = a[0] &times; max_linear (0.3 m/s)<br>
+      angular.z = a[1] &times; max_angular (1.0 rad/s)</div>
+      <p class="kv">Input is already <code>clip(-1,1)</code>-ed. Normalizing actions stabilizes policy learning.</p>
+
+      <h3>Termination conditions</h3>
+      <table>
+        <tr><th>Condition</th><th>Kind</th><th>info</th></tr>
+        <tr><td><code>dist &lt; 0.20m</code></td><td><span class="pill g">terminated</span></td><td>is_success=True</td></tr>
+        <tr><td><code>|x|&gt;3 or |y|&gt;3</code></td><td><span class="pill r">terminated</span></td><td>out_of_bounds</td></tr>
+        <tr><td><code>steps &ge; 400</code></td><td><span class="pill w">truncated</span></td><td>timeout</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Reward function R</h3>
+    <div class="eq">
+r<sub>t</sub> = reward_progress &times; (prev_dist &minus; dist)   ... distance-progress shaping (+30 / m)<br>
+&nbsp;&nbsp;&nbsp;+ reward_step (&minus;0.01)                        ... survival penalty (encourages fast reaching)<br>
+&nbsp;&nbsp;&nbsp;+ reward_action &times; &Sigma;a&#7522;&#178; (&minus;0.001)              ... penalty on large actions<br>
+<span style="color:#57e3a3">+ terminal:</span> reached +100 / out-of-bounds &minus;50
+    </div>
+    <p class="kv">Because it is shaping-based, the reward is dense and converges faster than a sparse reach bonus alone.
+    <b>Note:</b> on timeout (<code>truncated</code>) the fail penalty (&minus;50) is NOT added (only out-of-bounds adds it).</p>
+  </div>
+</section>
+
+<!-- ============ 4.5 PID & RL ============ -->
+<section id="spid">
+  <h2>4.5 Background: PID Control and the RL "Model Answer"</h2>
+
+  <div class="card">
+    <h3>What PID control is (background)</h3>
+    <p>PID control is the most fundamental feedback control law: it determines the control output <b>u(t)</b> from the
+    <b>error e(t)</b> between the target and current value. It weighs and sums three terms:
+    "present error (P)", "accumulated error (I)", and "rate of change of error (D)".</p>
+    <div class="eq">u(t) = K<sub>p</sub>&#183;e(t) &nbsp;+&nbsp; K<sub>i</sub>&#183;&#8747;e(t)dt &nbsp;+&nbsp; K<sub>d</sub>&#183;de(t)/dt</div>
+    <table>
+      <tr><th>Term</th><th>Role</th><th>Intuition</th></tr>
+      <tr><td><b>P</b> (proportional)</td><td>immediate response proportional to current error</td><td>the farther from goal, the stronger the action</td></tr>
+      <tr><td><b>I</b> (integral)</td><td>eliminates accumulated error</td><td>patiently closes steady-state offset</td></tr>
+      <tr><td><b>D</b> (derivative)</td><td>suppresses rate of change of error</td><td>damps overshoot</td></tr>
+    </table>
+    <p class="kv">This package's <code>demo_reach.py</code> is a simplified version using <b>only the P term</b> (P-control),
+    hand-coding the rule "turn toward the goal, then move forward once facing it."</p>
+  </div>
+
+  <div class="card">
+    <h3>Why PID is the "model answer" for the learning target</h3>
+    <p>Reinforcement learning (RL) provides <b>no correct action labels at all</b>. Relying only on a scalar reward,
+    it acquires a policy (a mapping observation&rarr;action, i.e. a neural network) by trial and error.
+    PID / P-control, by contrast, is <b>an oracle (model answer) into which a human directly embeds the control law "move like this to reach the goal"</b>.</p>
+    <p>In other words, the two share the <b>same goal (reaching the target) but differ in means</b>.
+    Understanding PID first gives you <b>a clear example of the behavior RL ultimately wants to acquire</b>.
+    The fact that <code>demo_reach.py</code> can reach the goal reliably also proves that the
+    <b>environment (reset, reward, reach detection, goal rendering) is functioning correctly</b>,
+    and it lays the foundation for the question: "Can RL find a policy that <b>matches (or exceeds) this model answer, without any gain design</b>?"</p>
+
+    <table>
+      <tr><th></th><th>PID / P-control (demo_reach)</th><th>Reinforcement Learning (train/eval)</th></tr>
+      <tr><td>Form of the control law</td><td>fixed formula <code>u=Kp&#183;e+&hellip;</code></td><td>neural network (arbitrary nonlinear function)</td></tr>
+      <tr><td>What is tuned</td><td>a few coefficients K<sub>p</sub>, K<sub>i</sub>, K<sub>d</sub></td><td>thousands to tens of thousands of weights</td></tr>
+      <tr><td>Who decides</td><td>designed / tuned by hand</td><td><b>acquired automatically</b> from reward</td></tr>
+      <tr><td>Supervision given</td><td>the control law itself (model answer)</td><td>only scalar reward (no correct actions)</td></tr>
+      <tr><td>Expressiveness</td><td>mostly linear error feedback</td><td>can express nonlinear, context-dependent policies</td></tr>
+      <tr><td>Positioning</td><td><span class="pill g">verification oracle</span></td><td><span class="pill b">the actual learning target</span></td></tr>
+    </table>
+    <div class="note"><b>Summary:</b> the essence is the shift from "a human hand-designs PID gains" to "RL automatically acquires a policy relying only on reward."
+    However, what RL learns is <b>not the PID structure itself</b> but a <b>policy in a much wider function space</b> that maximizes reward.
+    It may converge to PID-like behavior, or acquire behavior that PID cannot express (e.g. curving around).</div>
+  </div>
+</section>
+
+<!-- ============ 5. Detailed Spec ============ -->
+<section id="s5">
+  <h2>5. Detailed Specification (files &amp; functions)</h2>
+
+  <h3>5.1 <code>gazebo_env.py</code> — Gymnasium&times;ROS2 environment wrapper</h3>
+  <div class="card">
+    <table>
+      <tr><th>Member / function</th><th>Role</th></tr>
+      <tr><td><code>EnvConfig</code></td><td>dataclass aggregating all hyperparameters (see table below).</td></tr>
+      <tr><td><code>__init__()</code></td><td>define observation/action spaces, create rclpy node, create pub/sub, create <code>/reset_simulation</code> / <code>/spawn_entity</code> / <code>/delete_entity</code> clients.</td></tr>
+      <tr><td><code>_on_odom(msg)</code></td><td>odom callback. quaternion&rarr;yaw conversion, updates x,y,yaw,v,&#969;, sets <code>_odom_ready</code>.</td></tr>
+      <tr><td><code>_spin_until(pred,timeout)</code></td><td>generic wait spinning <code>spin_once</code> until predicate is true. Used to wait for future completion or odom update.</td></tr>
+      <tr><td><code>_spin_settle(sec)</code></td><td>spin for the given seconds to let <b>asynchronous work (reset, delete, ...) be applied to the world</b>.</td></tr>
+      <tr><td><code>_obs()</code></td><td>build the 7-D observation vector (heading error as cos/sin).</td></tr>
+      <tr><td><code>_sample_goal()</code></td><td>random goal in the &#177;goal_range(2m) rectangle. Retries up to 20 times until &ge;0.5m from origin.</td></tr>
+      <tr><td><code>_publish_goal_marker()</code></td><td>publish a SPHERE Marker for RViz in the <code>odom</code> frame.</td></tr>
+      <tr><td><code>_spawn/_delete_goal_entity()</code></td><td>create/delete the red goal cylinder in Gazebo (using the SDF template).</td></tr>
+      <tr><td><code>_place_goal(x,y)</code></td><td>place goal marker by <b>delete&rarr;_spin_settle(0.3)&rarr;spawn</b> (up to 5 retries), re-creating it every time. No move/reuse.</td></tr>
+      <tr><td><code>reset()</code></td><td>stop&rarr;<code>/reset_simulation</code>&rarr;wait odom&rarr;<b>wait for reset applied (_spin_settle)</b>&rarr;sample/place goal&rarr;return initial obs. <code>options={"goal":(x,y)}</code> fixes the goal.</td></tr>
+      <tr><td><code>step(action)</code></td><td>scale action&rarr;publish cmd_vel&rarr;spin for step_dt&rarr;compute obs/reward/done and return.</td></tr>
+      <tr><td><code>render()</code></td><td>re-publish Marker only (observe in Gazebo GUI).</td></tr>
+      <tr><td><code>close()</code></td><td>stop, delete goal, destroy node, rclpy shutdown.</td></tr>
+    </table>
+  </div>
+
+  <h3>5.2 <code>EnvConfig</code> parameter list</h3>
+  <div class="card">
+    <table>
+      <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
+      <tr><td><code>max_linear</code></td><td>0.3 m/s</td><td>max linear-velocity scale</td></tr>
+      <tr><td><code>max_angular</code></td><td>1.0 rad/s</td><td>max angular-velocity scale</td></tr>
+      <tr><td><code>goal_range</code></td><td>2.0 m</td><td>half-side of goal sampling rectangle</td></tr>
+      <tr><td><code>goal_reach_dist</code></td><td>0.20 m</td><td>reach-detection threshold</td></tr>
+      <tr><td><code>goal_entity_name</code></td><td>"rl_goal"</td><td>goal name in Gazebo</td></tr>
+      <tr><td><code>goal_radius / height</code></td><td>0.10 / 0.30 m</td><td>goal cylinder dimensions</td></tr>
+      <tr><td><code>goal_color_rgb</code></td><td>(1.0,0.1,0.1)</td><td>goal color (red)</td></tr>
+      <tr><td><code>goal_emissive</code></td><td>0.4</td><td>emissive component (visible even in shadow)</td></tr>
+      <tr><td><code>bounds</code></td><td>3.0 m</td><td>boundary (fail if exceeded)</td></tr>
+      <tr><td><code>max_steps</code></td><td>400</td><td>max steps per episode</td></tr>
+      <tr><td><code>step_dt</code></td><td>0.1 s</td><td>control period</td></tr>
+      <tr><td><code>reward_progress</code></td><td>30.0</td><td>distance-progress coefficient</td></tr>
+      <tr><td><code>reward_step</code></td><td>&minus;0.01</td><td>survival penalty</td></tr>
+      <tr><td><code>reward_goal</code></td><td>100.0</td><td>reach bonus</td></tr>
+      <tr><td><code>reward_fail</code></td><td>&minus;50.0</td><td>out-of-bounds penalty</td></tr>
+      <tr><td><code>reward_action</code></td><td>&minus;0.001</td><td>action-magnitude penalty</td></tr>
+    </table>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>5.3 <code>train.py</code> — training</h3>
+      <ul>
+        <li>CLI: <code>--timesteps</code>(50k) <code>--algo</code>(ppo/sac) <code>--n-steps</code>(1024) <code>--learning-rate</code>(3e-4) <code>--seed</code> <code>--save-dir</code> <code>--log-name</code>.</li>
+        <li>Wraps Env in <code>Monitor</code> (writes <code>monitor.csv</code>).</li>
+        <li><b>PPO:</b> MlpPolicy, batch=64, &gamma;=0.99, gae_&lambda;=0.95.<br><b>SAC:</b> buffer=100k, batch=256, &tau;=0.005.</li>
+        <li><code>CheckpointCallback</code> saves an intermediate model every 1/5 of the run.</li>
+        <li>Saves <code>{algo}_final.zip</code> even on Ctrl+C. TensorBoard logging supported.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>5.4 <code>evaluate.py</code> — evaluation</h3>
+      <ul>
+        <li>CLI: <code>--model</code>(required) <code>--algo</code> <code>--episodes</code>(10) <code>--deterministic</code> <code>--seed</code>.</li>
+        <li>Loads a trained <code>.zip</code> and runs episodes with a deterministic policy.</li>
+        <li>Prints per-episode return, length, and success.</li>
+        <li>Finally reports <b>mean return &plusmn; std, mean length, success rate</b>.</li>
+      </ul>
+      <h3>5.5 <code>random_agent.py</code> — sanity check</h3>
+      <ul>
+        <li>Random actions via <code>action_space.sample()</code>.</li>
+        <li>A sanity check to visually verify Gazebo communication, reward, and boundary checks.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>5.6 <code>demo_reach.py</code> — P-control demo (verification oracle)</h3>
+    <ul>
+      <li>CLI: <code>--goal-x</code> <code>--goal-y</code> (goal coords) <code>--episodes</code> <code>--k-ang</code>(1.5) <code>--k-lin</code>(1.2) <code>--seed</code>.</li>
+      <li>Uses <code>reset(options={"goal":(x,y)})</code> to <b>fix the goal</b> and reach it reliably without learning.</li>
+      <li>Control law <code>p_control()</code>: recover heading error from <code>cos/sin</code> &rarr; angular <code>ang=clip(k_ang&#183;he,-1,1)</code>, forward <code>lin=clip(k_lin&#183;dist,0,1)&#183;max(0,cos he)</code>.</li>
+      <li>Use: <b>end-to-end check</b> of the environment (reset, reward, reach detection, goal rendering) and demonstration of the <b>model answer</b> RL aims for (section 4.5).</li>
+    </ul>
+    <pre>ros2 run yahboomcar_rl demo_reach --goal-x 1.5 --goal-y 0.5</pre>
+  </div>
+
+  <div class="card">
+    <h3>5.7 <code>goal_reach_launch.py</code> — combined launch</h3>
+    <p>Includes <code>display_gazebo.launch.py</code> and, via <code>TimerAction(period=8s)</code>, starts <code>random_agent</code> (3 episodes) after Gazebo comes up. For real training, prefer running <code>ros2 run yahboomcar_rl train</code> directly.</p>
+  </div>
+</section>
+
+<!-- ============ 6. Reset / Goal Placement ============ -->
+<section id="s6">
+  <h2>6. Reset &amp; Goal Placement Logic (simple, deterministic)</h2>
+  <p>To fix the bug where the goal cylinder "does not render in certain episodes / flashes and disappears", every episode is
+  unified to <b>the same deterministic procedure</b>. The key is to
+  "spawn the goal <b>only after the asynchronous application of <code>/reset_simulation</code> has finished</b>."</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Reset (inside <code>reset()</code>)</h3>
+      <ol>
+        <li><b>Stop:</b> publish zero to <code>cmd_vel</code>.</li>
+        <li><b>World reset:</b> call <code>/reset_simulation</code> (<code>std_srvs/Empty</code>) and wait for completion.</li>
+        <li><b>Wait for odom:</b> wait until <code>_odom_ready</code> is set.</li>
+        <li><b>Wait for reset applied:</b> <code>_spin_settle(0.3)</code>. Reset deletes runtime-spawned models <b>asynchronously afterwards</b>, so we make sure it takes effect here.</li>
+        <li><b>Re-create goal:</b> force <code>_goal_spawned=False</code> to always take the fresh-spawn path.</li>
+      </ol>
+      <div class="note">Passing <code>options={"goal":(x,y)}</code> fixes the goal (for demo/verification). Without it, <code>_sample_goal()</code> generates a random goal.</div>
+    </div>
+    <div class="card">
+      <h3>Goal placement (<code>_place_goal()</code>)</h3>
+      <ol>
+        <li><b>delete:</b> remove the existing <code>rl_goal</code> via <code>delete_entity</code>.</li>
+        <li><b>Wait for removal:</b> <code>_spin_settle(0.3)</code> to let the delete apply and release the same-name model registration.</li>
+        <li><b>spawn:</b> spawn the red cylinder from the SDF template. On failure, retry "delete&rarr;wait&rarr;spawn" <b>up to 5 times</b>.</li>
+      </ol>
+      <p class="kv">The move/reuse path is removed (<code>set_entity_state</code> is not used). This eliminates the race with reset, so the cylinder renders stably in every episode.
+      <code>rl_goal_marker</code> (red sphere) is also always published to RViz, giving redundant visualization.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Root cause and fix (record)</h3>
+    <ul>
+      <li><b>Symptom:</b> only ep1 rendered the cylinder correctly. In ep2/ep3 it "did not render" or "appeared briefly then vanished".</li>
+      <li><b>Root cause:</b> <code>/reset_simulation</code> returns the world to its startup state, so it <b>deletes the runtime-spawned goal</b>, and that processing is <b>applied asynchronously afterwards</b>. The old move/reuse path raced with this, and the goal spawned just before was deleted by reset's post-processing.</li>
+      <li><b>Fix:</b> unify all episodes to "wait for reset fully applied &rarr; fresh spawn" (the procedure in this section). Episode-dependent branching was removed to make it deterministic.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 7. How to Run ============ -->
+<section id="s7">
+  <h2>7. How to Run (quick reference)</h2>
+  <div class="card">
+<pre># install dependencies
+pip install "gymnasium>=0.29" "stable-baselines3[extra]>=2.3" torch numpy
+sudo apt install ros-humble-gazebo-ros-pkgs ros-humble-visualization-msgs
+
+# build
+cd ~/.../yahboomcar_ws
+colcon build --packages-select yahboomcar_rl && source install/setup.bash
+
+# 1) Start Gazebo (separate terminal) - must load init/factory plugins
+ros2 launch yahboomcar_description display_gazebo.launch.py
+#   (if starting manually, always add the plugins)
+#   gazebo --verbose -s libgazebo_ros_init.so -s libgazebo_ros_factory.so
+
+# 2) Sanity check (verify the goal cylinder renders in every episode)
+ros2 run yahboomcar_rl random_agent --episodes 3
+
+# 3) Verify: reliably reach via P-control (env end-to-end check)
+ros2 run yahboomcar_rl demo_reach --goal-x 1.5 --goal-y 0.5
+
+# 4) Train
+ros2 run yahboomcar_rl train --timesteps 50000 --algo ppo --save-dir ~/rl_models
+tensorboard --logdir ~/rl_models
+
+# 5) Evaluate
+ros2 run yahboomcar_rl evaluate --model ~/rl_models/&lt;run&gt;/ppo_final.zip --episodes 10</pre>
+  </div>
+  <div class="note">
+    <b>Toward a digital twin (per README):</b>
+    (1) connect real odom/IMU directly to the Env &rarr; (2) replace reset with manual real recovery + RViz click goal input &rarr;
+    (3) domain-randomize friction/inertia/latency to reduce the Sim-to-Real gap &rarr;
+    (4) add a 2D LiDAR to extend to obstacle-avoidance tasks.
+  </div>
+</section>
+
+</main>
+<footer>
+  yahboomcar_rl Reinforcement Learning Specification Report / auto-generated document
+</footer>
+</body>
+</html>

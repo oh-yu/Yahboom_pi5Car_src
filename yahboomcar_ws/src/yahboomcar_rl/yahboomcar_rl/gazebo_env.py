@@ -35,12 +35,6 @@ from nav_msgs.msg import Odometry
 from std_srvs.srv import Empty
 from visualization_msgs.msg import Marker
 from gazebo_msgs.srv import SpawnEntity, DeleteEntity
-try:  # SetEntityState は world SDF に libgazebo_ros_state.so が必要
-    from gazebo_msgs.srv import SetEntityState
-    _HAS_SET_STATE = True
-except ImportError:  # pragma: no cover
-    SetEntityState = None  # type: ignore
-    _HAS_SET_STATE = False
 
 
 # Gazebo 上に配置する赤いシリンダ（衝突無し・静的）
@@ -148,12 +142,6 @@ class YahboomGoalEnv(gym.Env):
         self._reset_client = self._node.create_client(Empty, "/reset_simulation")
         self._spawn_client = self._node.create_client(SpawnEntity, "/spawn_entity")
         self._delete_client = self._node.create_client(DeleteEntity, "/delete_entity")
-        if _HAS_SET_STATE:
-            self._set_state_client = self._node.create_client(
-                SetEntityState, "/set_entity_state"
-            )
-        else:
-            self._set_state_client = None
         self._goal_spawned: bool = False
 
         # ロボット状態
@@ -207,6 +195,12 @@ class YahboomGoalEnv(gym.Env):
             if predicate():
                 return True
         return False
+
+    def _spin_settle(self, seconds: float) -> None:
+        """指定秒だけノードを spin し、非同期処理を世界へ適用させる."""
+        t0 = time.time()
+        while time.time() - t0 < seconds:
+            rclpy.spin_once(self._node, timeout_sec=0.02)
 
     def _publish_goal_marker(self) -> None:
         m = Marker()
@@ -275,43 +269,28 @@ class YahboomGoalEnv(gym.Env):
         future = self._delete_client.call_async(req)
         self._spin_until(lambda: future.done(), timeout=2.0)
 
-    def _move_goal_entity(self, x: float, y: float) -> bool:
-        """SetEntityState でゴールを移動 (失敗時 False)."""
-        if self._set_state_client is None or not self._set_state_client.service_is_ready():
-            return False
-        req = SetEntityState.Request()
-        req.state.name = self.cfg.goal_entity_name
-        req.state.pose.position.x = float(x)
-        req.state.pose.position.y = float(y)
-        req.state.pose.position.z = self.cfg.goal_height / 2.0
-        req.state.pose.orientation.w = 1.0
-        req.state.reference_frame = "world"
-        future = self._set_state_client.call_async(req)
-        self._spin_until(lambda: future.done(), timeout=1.0)
-        try:
-            res = future.result()
-            return bool(res is not None and res.success)
-        except Exception:
-            return False
-
     def _place_goal(self, x: float, y: float) -> None:
         """Gazebo 上のゴール標識を (x, y) に配置する.
 
-        まだ spawn 前 → spawn。既にある → set_entity_state で移動、
-        失敗すれば delete+spawn でリカバリする。
+        /reset_simulation はランタイムで spawn したモデルを消去/リセットし、
+        しかも非同期で後から効くため、move や再利用は競合して不安定になる。
+        そのため毎エピソード「delete → 消滅待ち → spawn」で作り直す。
+        spawn 失敗（同名モデルの登録が未解放など）はリトライで吸収する。
         """
-        if not self._goal_spawned:
+        self._delete_goal_entity()
+        # 削除が世界へ適用され、同名モデルの登録が解放されるのを待つ
+        self._spin_settle(0.3)
+        for _ in range(5):
             if self._spawn_goal_entity(x, y):
                 self._goal_spawned = True
-            return
-        if self._move_goal_entity(x, y):
-            return
-        # フォールバック: delete して再 spawn
-        self._delete_goal_entity()
-        if self._spawn_goal_entity(x, y):
-            self._goal_spawned = True
-        else:
-            self._goal_spawned = False
+                return
+            # 失敗時: まだ名前が残っている可能性 → 再削除して待つ
+            self._delete_goal_entity()
+            self._spin_settle(0.3)
+        self._goal_spawned = False
+        self._node.get_logger().warn(
+            f"ゴール標識の spawn に失敗しました (x={x:.2f}, y={y:.2f})"
+        )
 
     def _obs(self) -> np.ndarray:
         dx = self._gx - self._x
@@ -359,11 +338,20 @@ class YahboomGoalEnv(gym.Env):
         # odom が原点付近に戻るまで少し待つ
         self._odom_ready = False
         self._spin_until(lambda: self._odom_ready, timeout=2.0)
-        # 数フレーム余分に取り込み最新値へ
-        for _ in range(3):
-            rclpy.spin_once(self._node, timeout_sec=0.05)
+        # reset_simulation の実適用（ランタイム spawn 済みモデルの消去を含む）が
+        # 世界へ反映されるのを待つ。これより後にゴールを spawn することで、
+        # reset の後処理でゴールが消される競合を防ぐ。
+        self._spin_settle(0.3)
+        # reset でゴール標識は消えている前提。作り直しを強制する。
+        self._goal_spawned = False
 
-        self._gx, self._gy = self._sample_goal()
+        # options={"goal": (x, y)} でゴールを固定指定できる（デモ/検証用）。
+        # 指定が無ければ従来通りランダム生成。
+        if options is not None and options.get("goal") is not None:
+            gx, gy = options["goal"]
+            self._gx, self._gy = float(gx), float(gy)
+        else:
+            self._gx, self._gy = self._sample_goal()
         self._steps = 0
         self._prev_dist = math.hypot(self._gx - self._x, self._gy - self._y)
         self._place_goal(self._gx, self._gy)

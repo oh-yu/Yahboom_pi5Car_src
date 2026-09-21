@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>yahboomcar_rl 強化学習処理 仕様レポート</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#161d2e; --panel2:#1d2740; --ink:#e8edf7; --sub:#9fb0cf;
+    --acc:#4da3ff; --acc2:#57e3a3; --warn:#ffb454; --bad:#ff6b6b; --line:#2a3550;
+    --code:#0b1020;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    line-height:1.7;font-size:15px}
+  header{padding:34px 40px;background:linear-gradient(120deg,#182444,#0f1420);
+    border-bottom:1px solid var(--line)}
+  header h1{margin:0 0 6px;font-size:26px}
+  header .sub{color:var(--sub);font-size:14px}
+  .tag{display:inline-block;background:var(--panel2);color:var(--acc);
+    border:1px solid var(--line);border-radius:20px;padding:2px 12px;font-size:12px;margin-right:6px}
+  nav{position:sticky;top:0;z-index:9;background:#0c111c;border-bottom:1px solid var(--line);
+    padding:10px 40px;display:flex;flex-wrap:wrap;gap:8px}
+  nav a{color:var(--sub);text-decoration:none;font-size:13px;padding:4px 10px;border-radius:6px}
+  nav a:hover{background:var(--panel2);color:var(--ink)}
+  main{max-width:1080px;margin:0 auto;padding:30px 40px 80px}
+  section{margin:38px 0}
+  h2{font-size:21px;border-left:5px solid var(--acc);padding-left:12px;margin:0 0 14px}
+  h3{font-size:16px;color:var(--acc2);margin:22px 0 8px}
+  p{margin:8px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:14px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:820px){.grid2,.grid3{grid-template-columns:1fr}}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--acc)}
+  td code,p code,li code{background:var(--code);color:var(--acc2);padding:1px 6px;border-radius:5px;font-size:12.5px}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    overflow:auto;font-size:12.5px;color:#d7e3ff}
+  ul,ol{margin:8px 0 8px 4px;padding-left:22px}
+  li{margin:4px 0}
+  .pill{display:inline-block;padding:1px 9px;border-radius:12px;font-size:12px;font-weight:600}
+  .pill.g{background:rgba(87,227,163,.15);color:var(--acc2)}
+  .pill.b{background:rgba(77,163,255,.15);color:var(--acc)}
+  .pill.w{background:rgba(255,180,84,.15);color:var(--warn)}
+  .pill.r{background:rgba(255,107,107,.15);color:var(--bad)}
+  .note{border-left:4px solid var(--warn);background:rgba(255,180,84,.08);padding:10px 14px;border-radius:0 8px 8px 0}
+  .kv{font-size:13px;color:var(--sub)}
+  .kv b{color:var(--ink)}
+  figure{margin:16px 0}
+  figcaption{color:var(--sub);font-size:12.5px;margin-top:6px;text-align:center}
+  svg{width:100%;height:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+  .mono{font-family:"Consolas","SFMono-Regular",monospace}
+  footer{color:var(--sub);font-size:12px;text-align:center;padding:24px;border-top:1px solid var(--line)}
+  .eq{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 18px;
+    font-family:"Consolas",monospace;color:#d7e3ff;overflow:auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>yahboomcar_rl 強化学習処理 仕様レポート</h1>
+  <div class="sub">Yahboom pi5 Car ／ ROS2 (Humble) + Gazebo Classic 上の Goal-Reaching（目標到達）強化学習パッケージ</div>
+  <div style="margin-top:12px">
+    <span class="tag">ROS2 Humble</span><span class="tag">Gazebo Classic</span>
+    <span class="tag">Gymnasium</span><span class="tag">Stable-Baselines3</span>
+    <span class="tag">PPO / SAC</span>
+  </div>
+</header>
+
+<nav>
+  <a href="#s1">1. 概要</a>
+  <a href="#s2">2. 全体処理フロー</a>
+  <a href="#s3">3. システム構成</a>
+  <a href="#s4">4. RL定式化(MDP)</a>
+  <a href="#spid">4.5 PID制御とRL</a>
+  <a href="#s5">5. 詳細仕様</a>
+  <a href="#s6">6. リセット/ゴール配置</a>
+  <a href="#s7">7. 実行手順</a>
+</nav>
+
+<main>
+
+<!-- ============ 1. 概要 ============ -->
+<section id="s1">
+  <h2>1. パッケージ概要</h2>
+  <div class="card">
+    <p><b>目的：</b>差動駆動ロボット（Yahboom pi5 Car）を Gazebo 上で走らせ、
+    ランダムに現れる<b>目標地点まで自律到達</b>する方策を強化学習で獲得する、最小構成のサンプル実装。</p>
+    <p><b>設計思想：</b>ROS2 の通信（<code>cmd_vel</code> publish / <code>odom</code> subscribe）を
+    Gymnasium の <code>Env</code> インターフェースでラップし、
+    Stable-Baselines3 の PPO / SAC をそのまま適用できるようにしている点が核。
+    リセットは <code>/reset_simulation</code>、ゴール標識は毎エピソード <b>delete→spawn</b> で作り直す<b>簡潔で決定的な</b>構成とし、
+    将来の<b>デジタルツイン化（Sim-to-Real）</b>を見据えた拡張余地を持つ。</p>
+    <div class="grid3" style="margin-top:12px">
+      <div><span class="pill b">環境</span><div class="kv"><code>gazebo_env.py</code><br>Gym×ROS2ラッパー</div></div>
+      <div><span class="pill g">学習</span><div class="kv"><code>train.py</code><br>PPO/SAC学習</div></div>
+      <div><span class="pill g">評価</span><div class="kv"><code>evaluate.py</code><br>学習済み方策の検証</div></div>
+      <div><span class="pill w">確認</span><div class="kv"><code>random_agent.py</code><br>環境sanity check</div></div>
+      <div><span class="pill r">検証</span><div class="kv"><code>demo_reach.py</code><br>P制御で確実に到達</div></div>
+      <div><span class="pill w">起動</span><div class="kv"><code>goal_reach_launch.py</code><br>Gazebo+RL同時起動</div></div>
+      <div><span class="pill b">設定</span><div class="kv"><code>EnvConfig</code><br>全ハイパラ集約</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2. 全体処理フロー ============ -->
+<section id="s2">
+  <h2>2. 全体処理フロー概要</h2>
+  <p>学習は「エピソードを繰り返し、各ステップで <span class="pill b">観測→行動→報酬</span> を回す」標準的な強化学習ループ。
+  下図は 1 エピソードの流れと、内部で走る 1 ステップ（制御周期 0.1s）の詳細を俯瞰したもの。</p>
+
+  <figure>
+  <svg viewBox="0 0 1040 560" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+    <defs>
+      <marker id="ar" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#4da3ff"/>
+      </marker>
+      <marker id="arg" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#57e3a3"/>
+      </marker>
+    </defs>
+    <style>
+      .box{fill:#1d2740;stroke:#2a3550;rx:10}
+      .t{fill:#e8edf7;font-size:13px}
+      .tc{fill:#e8edf7;font-size:13px;text-anchor:middle}
+      .s{fill:#9fb0cf;font-size:11px;text-anchor:middle}
+      .l{stroke:#4da3ff;stroke-width:2;fill:none}
+      .lg{stroke:#57e3a3;stroke-width:2;fill:none}
+      .lbl{fill:#9fb0cf;font-size:11px;text-anchor:middle}
+    </style>
+
+    <!-- Start -->
+    <rect class="box" x="40" y="30" width="180" height="46" rx="10"/>
+    <text class="tc" x="130" y="52">学習開始 (train.py)</text>
+    <text class="s" x="130" y="68">Env生成 + PPO/SAC構築</text>
+
+    <!-- reset -->
+    <rect class="box" x="40" y="120" width="180" height="70" rx="10" fill="#233255"/>
+    <text class="tc" x="130" y="145">reset()</text>
+    <text class="s" x="130" y="162">ロボット原点復帰</text>
+    <text class="s" x="130" y="178">目標をランダム生成/配置</text>
+
+    <line class="l" x1="130" y1="76" x2="130" y2="120" marker-end="url(#ar)"/>
+
+    <!-- step loop box -->
+    <rect x="300" y="95" width="700" height="230" rx="14" fill="#131a2b" stroke="#2a3550" stroke-dasharray="5 5"/>
+    <text x="315" y="118" fill="#57e3a3" font-size="13" font-weight="700">1 step ループ（制御周期 step_dt = 0.1s、最大 max_steps=400）</text>
+
+    <rect class="box" x="320" y="135" width="150" height="56" rx="9"/>
+    <text class="tc" x="395" y="158">方策 π(a|s)</text>
+    <text class="s" x="395" y="176">obs→action(2次元)</text>
+
+    <rect class="box" x="510" y="135" width="160" height="56" rx="9"/>
+    <text class="tc" x="590" y="156">行動をcmd_velへ</text>
+    <text class="s" x="590" y="173">±0.3m/s, ±1.0rad/s</text>
+
+    <rect class="box" x="710" y="135" width="150" height="56" rx="9"/>
+    <text class="tc" x="785" y="156">Gazebo物理</text>
+    <text class="s" x="785" y="173">0.1s間spin</text>
+
+    <rect class="box" x="710" y="235" width="150" height="60" rx="9"/>
+    <text class="tc" x="785" y="258">odom受信</text>
+    <text class="s" x="785" y="275">x,y,yaw,v,ω</text>
+
+    <rect class="box" x="510" y="235" width="160" height="60" rx="9"/>
+    <text class="tc" x="590" y="258">観測obs生成</text>
+    <text class="s" x="590" y="275">7次元ベクトル</text>
+
+    <rect class="box" x="320" y="235" width="150" height="60" rx="9"/>
+    <text class="tc" x="395" y="255">報酬 + 終了判定</text>
+    <text class="s" x="395" y="272">reward, done</text>
+
+    <line class="l" x1="470" y1="163" x2="510" y2="163" marker-end="url(#ar)"/>
+    <line class="l" x1="670" y1="163" x2="710" y2="163" marker-end="url(#ar)"/>
+    <line class="l" x1="785" y1="191" x2="785" y2="235" marker-end="url(#ar)"/>
+    <line class="l" x1="710" y1="265" x2="670" y2="265" marker-end="url(#ar)"/>
+    <line class="l" x1="510" y1="265" x2="470" y2="265" marker-end="url(#ar)"/>
+    <!-- loop back -->
+    <path class="l" d="M395,235 L395,210 L395,191" marker-end="url(#ar)"/>
+    <text class="lbl" x="410" y="216">継続</text>
+
+    <line class="l" x1="220" y1="155" x2="320" y2="160" marker-end="url(#ar)"/>
+
+    <!-- done branch -->
+    <rect class="box" x="320" y="380" width="330" height="56" rx="9" fill="#233255"/>
+    <text class="tc" x="485" y="403">終了判定 (terminated / truncated)</text>
+    <text class="s" x="485" y="421">到達 / 境界外 / タイムアウト(400step)</text>
+    <line class="l" x1="395" y1="295" x2="395" y2="380" marker-end="url(#ar)"/>
+    <text class="lbl" x="360" y="340">done=True</text>
+
+    <!-- to update / next episode -->
+    <rect class="box" x="720" y="380" width="280" height="56" rx="9"/>
+    <text class="tc" x="860" y="403">方策更新 (SB3内部)</text>
+    <text class="s" x="860" y="421">rollout収集→勾配更新</text>
+    <line class="lg" x1="650" y1="408" x2="720" y2="408" marker-end="url(#arg)"/>
+
+    <!-- next episode -->
+    <path class="lg" d="M485,436 L485,490 L130,490 L130,190" marker-end="url(#arg)"/>
+    <text class="lbl" x="300" y="508">次エピソード reset()（total_timesteps 到達まで反復）</text>
+
+    <!-- finish -->
+    <rect class="box" x="720" y="480" width="280" height="46" rx="10" fill="#1a3320" stroke="#2f6b45"/>
+    <text class="tc" x="860" y="508">timesteps到達 → モデル保存 (.zip)</text>
+    <path class="lg" d="M860,436 L860,480" marker-end="url(#arg)"/>
+  </svg>
+  <figcaption>図1: 学習全体フロー（青＝1ステップのデータフロー、緑＝エピソード/学習の制御フロー）</figcaption>
+  </figure>
+
+  <div class="card">
+    <h3>ロジックのポイント（一目でわかる要点）</h3>
+    <ul>
+      <li><b>環境はROS2ノード：</b><code>step()</code> の中で <code>cmd_vel</code> を出し、<code>step_dt</code> ぶん <code>rclpy.spin_once</code> を回して <code>odom</code> を反映する。時間駆動の疑似同期。</li>
+      <li><b>報酬は距離短縮シェイピング主体：</b>「前ステップより目標に近づいた距離」に比例して報酬を与えるため、疎な到達ボーナスだけより学習が速い。</li>
+      <li><b>終了は3系統：</b>到達(<span class="pill g">成功</span>)・境界外(<span class="pill r">失敗</span>)＝<code>terminated</code>、400step超過(<span class="pill w">timeout</span>)＝<code>truncated</code>。</li>
+      <li><b>reset は簡潔・決定的：</b><code>/reset_simulation</code> でワールドを初期化し、<b>reset の非同期適用を待ってから</b>ゴールを spawn する。全エピソードで同じ手順に統一し、表示の取りこぼしを防ぐ。</li>
+      <li><b>学習/評価/確認で環境を共有：</b>全スクリプトが同じ <code>YahboomGoalEnv</code> を使うため、挙動の一貫性が担保される。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 3. システム構成 ============ -->
+<section id="s3">
+  <h2>3. システム構成（ROS2 トポロジ）</h2>
+  <p>RLノード（<code>YahboomGoalEnv</code>）と Gazebo の間で、以下のトピック／サービスが流れる。</p>
+
+  <figure>
+  <svg viewBox="0 0 1000 380" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+    <defs>
+      <marker id="a2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#4da3ff"/></marker>
+      <marker id="a3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#57e3a3"/></marker>
+      <marker id="a4" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#ffb454"/></marker>
+    </defs>
+    <style>
+      .nb{fill:#1d2740;stroke:#4da3ff;stroke-width:2;rx:12}
+      .gb{fill:#1d2740;stroke:#57e3a3;stroke-width:2;rx:12}
+      .rb{fill:#131a2b;stroke:#2a3550;rx:10}
+      .tt{fill:#e8edf7;font-size:13px;text-anchor:middle}
+      .ss{fill:#9fb0cf;font-size:11px;text-anchor:middle}
+    </style>
+
+    <!-- RL Node -->
+    <rect class="nb" x="40" y="120" width="240" height="140" rx="12"/>
+    <text class="tt" x="160" y="150" font-weight="700">RL ノード</text>
+    <text class="ss" x="160" y="168">YahboomGoalEnv</text>
+    <text class="ss" x="160" y="192">・方策 π (PPO/SAC)</text>
+    <text class="ss" x="160" y="210">・報酬/終了判定</text>
+    <text class="ss" x="160" y="228">・obs生成</text>
+
+    <!-- Gazebo -->
+    <rect class="gb" x="720" y="120" width="240" height="140" rx="12"/>
+    <text class="tt" x="840" y="150" font-weight="700">Gazebo Classic</text>
+    <text class="ss" x="840" y="168">display_gazebo.launch.py</text>
+    <text class="ss" x="840" y="192">・差動駆動プラグイン</text>
+    <text class="ss" x="840" y="210">・物理シミュレーション</text>
+    <text class="ss" x="840" y="228">・robot: micro4_0</text>
+
+    <!-- cmd_vel -->
+    <line class="l" x1="280" y1="150" x2="720" y2="150" stroke="#4da3ff" stroke-width="2" marker-end="url(#a2)"/>
+    <rect class="rb" x="410" y="132" width="180" height="26"/>
+    <text class="ss" x="500" y="149">/cmd_vel (Twist) →</text>
+
+    <!-- odom -->
+    <line x1="720" y1="200" x2="280" y2="200" stroke="#4da3ff" stroke-width="2" marker-end="url(#a2)"/>
+    <rect class="rb" x="410" y="186" width="180" height="26"/>
+    <text class="ss" x="500" y="203">← /odom (Odometry)</text>
+
+    <!-- services -->
+    <line x1="280" y1="240" x2="720" y2="240" stroke="#ffb454" stroke-width="2" marker-end="url(#a4)"/>
+    <rect class="rb" x="360" y="225" width="280" height="26"/>
+    <text class="ss" x="500" y="242">/reset_simulation · /spawn_entity · /delete_entity</text>
+
+    <!-- rviz -->
+    <rect class="rb" x="40" y="300" width="240" height="50"/>
+    <text class="tt" x="160" y="322">RViz2</text>
+    <text class="ss" x="160" y="340">rl_goal_marker (赤球) 可視化</text>
+    <line x1="160" y1="260" x2="160" y2="300" stroke="#57e3a3" stroke-width="2" marker-end="url(#a3)"/>
+    <text class="ss" x="230" y="285">Marker publish</text>
+
+    <!-- goal entity note -->
+    <rect class="rb" x="720" y="300" width="240" height="50"/>
+    <text class="tt" x="840" y="322">rl_goal エンティティ</text>
+    <text class="ss" x="840" y="340">赤い円柱 (SDF spawn)</text>
+    <line x1="840" y1="260" x2="840" y2="300" stroke="#ffb454" stroke-width="2" marker-end="url(#a4)"/>
+  </svg>
+  <figcaption>図2: ROS2 通信トポロジ（青＝トピック、橙＝サービス、緑＝可視化）</figcaption>
+  </figure>
+
+  <table>
+    <tr><th>種別</th><th>名前</th><th>型</th><th>方向</th><th>役割</th></tr>
+    <tr><td>Topic</td><td><code>cmd_vel</code></td><td>geometry_msgs/Twist</td><td>Env→Gazebo (pub)</td><td>並進・回転速度指令</td></tr>
+    <tr><td>Topic</td><td><code>odom</code></td><td>nav_msgs/Odometry</td><td>Gazebo→Env (sub)</td><td>自己位置・姿勢・速度</td></tr>
+    <tr><td>Topic</td><td><code>rl_goal_marker</code></td><td>visualization_msgs/Marker</td><td>Env→RViz (pub)</td><td>目標位置の赤球表示</td></tr>
+    <tr><td>Service</td><td><code>/reset_simulation</code></td><td>std_srvs/Empty</td><td>Env→Gazebo</td><td>シミュレーションを原点にリセット</td></tr>
+    <tr><td>Service</td><td><code>/spawn_entity</code></td><td>gazebo_msgs/SpawnEntity</td><td>Env→Gazebo</td><td>目標の赤円柱を生成</td></tr>
+    <tr><td>Service</td><td><code>/delete_entity</code></td><td>gazebo_msgs/DeleteEntity</td><td>Env→Gazebo</td><td>目標エンティティを削除</td></tr>
+  </table>
+  <div class="note">QoS は <code>RELIABLE / KEEP_LAST / depth=10</code>。<code>rclpy</code> は未初期化時のみ <code>init()</code> され、多重起動でも安全に扱われる。
+  <br><b>Gazebo 起動に必要なプラグイン：</b>reset 系は <code>libgazebo_ros_init.so</code>、spawn/delete 系は <code>libgazebo_ros_factory.so</code>。
+  素の <code>gazebo</code> 起動ではこれらが読み込まれず <code>/reset_simulation</code> 等が現れないため、
+  <code>ros2 launch yahboomcar_description display_gazebo.launch.py</code> での起動を推奨。</div>
+</section>
+
+<!-- ============ 4. RL定式化 ============ -->
+<section id="s4">
+  <h2>4. 強化学習の定式化（MDP）</h2>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>状態空間 S（7次元・連続）</h3>
+      <p><code>observation_space</code> は <code>Box</code>（下記の上下限で正負対称）。</p>
+      <table>
+        <tr><th>#</th><th>要素</th><th>意味</th></tr>
+        <tr><td>0</td><td><code>dx = gx - x</code></td><td>目標との x 偏差</td></tr>
+        <tr><td>1</td><td><code>dy = gy - y</code></td><td>目標との y 偏差</td></tr>
+        <tr><td>2</td><td><code>dist</code></td><td>目標までの直線距離</td></tr>
+        <tr><td>3</td><td><code>cos(heading_err)</code></td><td>方位誤差の cos</td></tr>
+        <tr><td>4</td><td><code>sin(heading_err)</code></td><td>方位誤差の sin</td></tr>
+        <tr><td>5</td><td><code>v</code></td><td>現在の並進速度</td></tr>
+        <tr><td>6</td><td><code>ω</code></td><td>現在の角速度</td></tr>
+      </table>
+      <p class="kv">方位誤差 = <code>atan2(dy,dx) − yaw</code> を [-π,π] に正規化し、角度の不連続を避けるため cos/sin で表現。</p>
+    </div>
+
+    <div class="card">
+      <h3>行動空間 A（2次元・連続）</h3>
+      <p><code>action_space</code> は各成分 <code>[-1, 1]</code> の <code>Box</code>。<code>step()</code> でスケール変換。</p>
+      <div class="eq">linear.x = a[0] × max_linear (0.3 m/s)<br>
+      angular.z = a[1] × max_angular (1.0 rad/s)</div>
+      <p class="kv">入力は <code>clip(-1,1)</code> 済み。行動を正規化しておくことで方策学習が安定する。</p>
+
+      <h3>終了条件</h3>
+      <table>
+        <tr><th>条件</th><th>種別</th><th>info</th></tr>
+        <tr><td><code>dist &lt; 0.20m</code></td><td><span class="pill g">terminated</span></td><td>is_success=True</td></tr>
+        <tr><td><code>|x|&gt;3 or |y|&gt;3</code></td><td><span class="pill r">terminated</span></td><td>out_of_bounds</td></tr>
+        <tr><td><code>steps ≥ 400</code></td><td><span class="pill w">truncated</span></td><td>timeout</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>報酬関数 R</h3>
+    <div class="eq">
+r<sub>t</sub> = reward_progress × (prev_dist − dist)   … 距離短縮シェイピング（+30 / m）<br>
+&nbsp;&nbsp;&nbsp;+ reward_step (−0.01)                        … 生存ペナルティ（早期到達を促す）<br>
+&nbsp;&nbsp;&nbsp;+ reward_action × Σaᵢ² (−0.001)              … 大きな行動へのペナルティ<br>
+<span style="color:#57e3a3">＋ 終端時：</span> 到達 +100 / 境界外 −50
+    </div>
+    <p class="kv">シェイピング主体のため報酬が密になり、疎な到達ボーナスのみより収束が速い。
+    <b>注：</b>タイムアウト(<code>truncated</code>)時は失敗ペナルティ(−50)は加算されない（境界外のみ加算）。</p>
+  </div>
+</section>
+
+<!-- ============ 4.5 PID制御とRL ============ -->
+<section id="spid">
+  <h2>4.5 前提知識：PID制御と、RLの「模範解答」</h2>
+
+  <div class="card">
+    <h3>PID制御とは（前提知識）</h3>
+    <p>PID制御は、目標値と現在値の<b>誤差 e(t)</b> から操作量 <b>u(t)</b> を決める、最も基本的なフィードバック制御則。
+    「今の誤差(P)」「誤差の累積(I)」「誤差の変化(D)」の3項を重み付けして足し合わせる。</p>
+    <div class="eq">u(t) = K<sub>p</sub>·e(t) &nbsp;+&nbsp; K<sub>i</sub>·∫e(t)dt &nbsp;+&nbsp; K<sub>d</sub>·de(t)/dt</div>
+    <table>
+      <tr><th>項</th><th>役割</th><th>直感</th></tr>
+      <tr><td><b>P</b>（比例）</td><td>現在の誤差に比例して即応</td><td>目標から遠いほど強く操作</td></tr>
+      <tr><td><b>I</b>（積分）</td><td>誤差の累積を消す</td><td>定常的なズレを粘り強く詰める</td></tr>
+      <tr><td><b>D</b>（微分）</td><td>誤差の変化を抑える</td><td>行き過ぎ（オーバーシュート）を減衰</td></tr>
+    </table>
+    <p class="kv">本パッケージの <code>demo_reach.py</code> は、このうち <b>P項だけ</b>を使った簡易版（P制御）で、
+    「目標方向へ旋回し、正面を向いたら前進」という制御則を人手で書き下している。</p>
+  </div>
+
+  <div class="card">
+    <h3>なぜPIDが「学習対象の模範解答」なのか</h3>
+    <p>強化学習(RL)は<b>正解の行動ラベルを一切与えない</b>。報酬というスカラー値だけを頼りに、
+    方策（observation→action の写像＝ニューラルネット）を試行錯誤で獲得する。
+    一方 PID/P制御は、<b>人間が「こう動けば目標に着く」という制御則を直接埋め込んだオラクル（模範解答）</b>である。</p>
+    <p>つまり両者は<b>目的（目標到達）が同じで、手段が違う</b>。
+    PID制御を先に理解しておくと、「RLが最終的に獲得したい振る舞いの、分かりやすい一例」が手に入る。
+    <code>demo_reach.py</code> が確実に到達できることは、
+    「環境（reset・報酬・到達判定・ゴール表示）が正しく機能している」ことの証明にもなり、
+    その上で「RLは<b>この模範解答に匹敵する（あるいは超える）方策を、ゲイン設計なしで自力で見つけられるか？</b>」を問う土台になる。</p>
+
+    <table>
+      <tr><th></th><th>PID / P制御（demo_reach）</th><th>強化学習（train/evaluate）</th></tr>
+      <tr><td>制御則の形</td><td>固定の数式 <code>u=Kp·e+…</code></td><td>ニューラルネット（任意の非線形関数）</td></tr>
+      <tr><td>調整対象</td><td>K<sub>p</sub>, K<sub>i</sub>, K<sub>d</sub> の少数の係数</td><td>数千〜数万の重みパラメータ</td></tr>
+      <tr><td>誰が決める</td><td>人間が手で設計・チューニング</td><td>報酬を頼りに<b>自動で獲得</b></td></tr>
+      <tr><td>与える正解</td><td>制御則そのもの（模範解答）</td><td>報酬スカラーのみ（正解行動は不与）</td></tr>
+      <tr><td>表現力</td><td>線形な誤差フィードバック中心</td><td>非線形・状況依存の複雑な方策も表現可</td></tr>
+      <tr><td>位置づけ</td><td><span class="pill g">検証用オラクル</span></td><td><span class="pill b">本来の学習対象</span></td></tr>
+    </table>
+    <div class="note"><b>まとめ：</b>「人間がPIDゲインを手設計する」→「RLが報酬だけを頼りに方策を自動獲得する」への置き換え、という理解が本質。
+    ただしRLが学習するのは<b>PIDという構造そのものではなく</b>、報酬を最大化する<b>より広い関数空間の中の方策</b>。
+    結果的にPID的な挙動へ収束することも、PIDでは書けない挙動（回り込み等）を獲得することもある。</div>
+  </div>
+</section>
+
+<!-- ============ 5. 詳細仕様 ============ -->
+<section id="s5">
+  <h2>5. 詳細仕様（ファイル・関数）</h2>
+
+  <h3>5.1 <code>gazebo_env.py</code> — Gymnasium×ROS2 環境ラッパー</h3>
+  <div class="card">
+    <table>
+      <tr><th>メンバ / 関数</th><th>役割</th></tr>
+      <tr><td><code>EnvConfig</code></td><td>全ハイパーパラメータを集約した dataclass（後述の一覧表）。</td></tr>
+      <tr><td><code>__init__()</code></td><td>observation/action空間定義、rclpyノード生成、pub/sub生成、<code>/reset_simulation</code>・<code>/spawn_entity</code>・<code>/delete_entity</code> クライアント生成。</td></tr>
+      <tr><td><code>_on_odom(msg)</code></td><td>odomコールバック。quaternion→yaw変換し x,y,yaw,v,ω を更新、<code>_odom_ready</code>を立てる。</td></tr>
+      <tr><td><code>_spin_until(pred,timeout)</code></td><td>述語が真になるまで <code>spin_once</code> を回す汎用待機。future完了やodom更新の待ちに使用。</td></tr>
+      <tr><td><code>_spin_settle(sec)</code></td><td>指定秒だけ spin し、reset や delete などの<b>非同期処理が世界へ適用される</b>のを待つ。</td></tr>
+      <tr><td><code>_obs()</code></td><td>7次元観測ベクトルを生成（方位誤差を cos/sin 化）。</td></tr>
+      <tr><td><code>_sample_goal()</code></td><td>±goal_range(2m) の矩形内でランダム目標生成。原点から0.5m以上離れるまで最大20回リトライ。</td></tr>
+      <tr><td><code>_publish_goal_marker()</code></td><td>RViz用のSPHERE Markerを <code>odom</code> フレームで publish。</td></tr>
+      <tr><td><code>_spawn/_delete_goal_entity()</code></td><td>Gazebo上の赤円柱ゴールの生成/削除（SDFテンプレートを利用）。</td></tr>
+      <tr><td><code>_place_goal(x,y)</code></td><td>ゴール標識配置：<b>delete→_spin_settle(0.3)→spawn</b>（最大5回リトライ）で毎回作り直す。move/再利用はしない。</td></tr>
+      <tr><td><code>reset()</code></td><td>停止→<code>/reset_simulation</code>→odom待ち→<b>reset適用待ち(_spin_settle)</b>→目標生成/配置→初期obs返却。<code>options={"goal":(x,y)}</code> で固定ゴール指定可。</td></tr>
+      <tr><td><code>step(action)</code></td><td>行動スケール→cmd_vel publish→step_dtぶんspin→obs/報酬/終了を算出して返す。</td></tr>
+      <tr><td><code>render()</code></td><td>Marker再送のみ（Gazebo GUIで観察）。</td></tr>
+      <tr><td><code>close()</code></td><td>停止、ゴール削除、ノード破棄、rclpy shutdown。</td></tr>
+    </table>
+  </div>
+
+  <h3>5.2 <code>EnvConfig</code> パラメータ一覧</h3>
+  <div class="card">
+    <table>
+      <tr><th>パラメータ</th><th>既定値</th><th>意味</th></tr>
+      <tr><td><code>max_linear</code></td><td>0.3 m/s</td><td>並進速度の最大スケール</td></tr>
+      <tr><td><code>max_angular</code></td><td>1.0 rad/s</td><td>角速度の最大スケール</td></tr>
+      <tr><td><code>goal_range</code></td><td>2.0 m</td><td>目標生成矩形の半辺</td></tr>
+      <tr><td><code>goal_reach_dist</code></td><td>0.20 m</td><td>到達判定しきい値</td></tr>
+      <tr><td><code>goal_entity_name</code></td><td>"rl_goal"</td><td>Gazebo上ゴール名</td></tr>
+      <tr><td><code>goal_radius / height</code></td><td>0.10 / 0.30 m</td><td>ゴール円柱の寸法</td></tr>
+      <tr><td><code>goal_color_rgb</code></td><td>(1.0,0.1,0.1)</td><td>ゴール色（赤）</td></tr>
+      <tr><td><code>goal_emissive</code></td><td>0.4</td><td>発光成分（影でも視認）</td></tr>
+      <tr><td><code>bounds</code></td><td>3.0 m</td><td>境界（超えると失敗）</td></tr>
+      <tr><td><code>max_steps</code></td><td>400</td><td>エピソード最大ステップ</td></tr>
+      <tr><td><code>step_dt</code></td><td>0.1 s</td><td>制御周期</td></tr>
+      <tr><td><code>reward_progress</code></td><td>30.0</td><td>距離短縮係数</td></tr>
+      <tr><td><code>reward_step</code></td><td>−0.01</td><td>生存ペナルティ</td></tr>
+      <tr><td><code>reward_goal</code></td><td>100.0</td><td>到達ボーナス</td></tr>
+      <tr><td><code>reward_fail</code></td><td>−50.0</td><td>境界外ペナルティ</td></tr>
+      <tr><td><code>reward_action</code></td><td>−0.001</td><td>行動大きさペナルティ</td></tr>
+    </table>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>5.3 <code>train.py</code> — 学習</h3>
+      <ul>
+        <li>CLI: <code>--timesteps</code>(5万) <code>--algo</code>(ppo/sac) <code>--n-steps</code>(1024) <code>--learning-rate</code>(3e-4) <code>--seed</code> <code>--save-dir</code> <code>--log-name</code>。</li>
+        <li>Env を <code>Monitor</code> でラップ（<code>monitor.csv</code>出力）。</li>
+        <li><b>PPO：</b>MlpPolicy, batch=64, γ=0.99, gae_λ=0.95。<br><b>SAC：</b>buffer=10万, batch=256, τ=0.005。</li>
+        <li><code>CheckpointCallback</code> で全体の1/5ごとに中間保存。</li>
+        <li>Ctrl+C 中断時も <code>{algo}_final.zip</code> を保存。TensorBoardログ対応。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>5.4 <code>evaluate.py</code> — 評価</h3>
+      <ul>
+        <li>CLI: <code>--model</code>(必須) <code>--algo</code> <code>--episodes</code>(10) <code>--deterministic</code> <code>--seed</code>。</li>
+        <li>学習済み <code>.zip</code> をロードし、決定論的方策でエピソード実行。</li>
+        <li>各エピソードのリターン・長さ・成功可否を出力。</li>
+        <li>最後に<b>平均リターン±標準偏差・平均長・成功率</b>を集計表示。</li>
+      </ul>
+      <h3>5.5 <code>random_agent.py</code> — 動作確認</h3>
+      <ul>
+        <li><code>action_space.sample()</code> でランダム行動。</li>
+        <li>Gazebo通信・報酬・境界判定を目視確認する sanity check。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>5.6 <code>demo_reach.py</code> — P制御デモ（検証用オラクル）</h3>
+    <ul>
+      <li>CLI: <code>--goal-x</code> <code>--goal-y</code>（目標座標） <code>--episodes</code> <code>--k-ang</code>(1.5) <code>--k-lin</code>(1.2) <code>--seed</code>。</li>
+      <li><code>reset(options={"goal":(x,y)})</code> で<b>指定ゴールに固定</b>し、学習抜きで必ず到達させる。</li>
+      <li>制御則 <code>p_control()</code>：方位誤差を <code>cos/sin</code> から復元 → 角速度 <code>ang=clip(k_ang·he,-1,1)</code>、前進 <code>lin=clip(k_lin·dist,0,1)·max(0,cos he)</code>。</li>
+      <li>用途：環境（reset・報酬・到達判定・ゴール表示）の <b>end-to-end 動作確認</b>と、RLが目指す<b>模範解答</b>の提示（4.5節）。</li>
+    </ul>
+    <pre>ros2 run yahboomcar_rl demo_reach --goal-x 1.5 --goal-y 0.5</pre>
+  </div>
+
+  <div class="card">
+    <h3>5.7 <code>goal_reach_launch.py</code> — 同時起動</h3>
+    <p><code>display_gazebo.launch.py</code> をincludeし、<code>TimerAction(period=8s)</code> でGazebo起動後に <code>random_agent</code>（3エピソード）を立ち上げる動作確認用launch。学習本番は <code>ros2 run yahboomcar_rl train</code> の直接実行を推奨。</p>
+  </div>
+</section>
+
+<!-- ============ 6. リセット/ゴール配置 ============ -->
+<section id="s6">
+  <h2>6. リセット & ゴール配置ロジック（簡潔・決定的）</h2>
+  <p>ゴール円柱が「特定エピソードだけ表示されない／一瞬で消える」不具合を解消するため、
+  全エピソードで<b>同一の決定的な手順</b>に統一している。核心は
+  「<code>/reset_simulation</code> の<b>非同期適用が終わってから</b>ゴールを spawn する」こと。</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>リセット（<code>reset()</code>内）</h3>
+      <ol>
+        <li><b>停止：</b><code>cmd_vel</code> にゼロを publish。</li>
+        <li><b>ワールドリセット：</b><code>/reset_simulation</code>（<code>std_srvs/Empty</code>）を呼び完了待ち。</li>
+        <li><b>odom復帰待ち：</b><code>_odom_ready</code> が立つまで待機。</li>
+        <li><b>reset適用待ち：</b><code>_spin_settle(0.3)</code>。reset はランタイム spawn 済みモデルの消去を<b>後から非同期に</b>効かせるため、ここで確実に反映させる。</li>
+        <li><b>ゴール再生成：</b><code>_goal_spawned=False</code> を強制し、必ず新規 spawn 経路へ。</li>
+      </ol>
+      <div class="note"><code>options={"goal":(x,y)}</code> を渡すとゴールを固定（デモ/検証用）。無指定なら <code>_sample_goal()</code> でランダム生成。</div>
+    </div>
+    <div class="card">
+      <h3>ゴール配置（<code>_place_goal()</code>）</h3>
+      <ol>
+        <li><b>delete：</b>既存の <code>rl_goal</code> を <code>delete_entity</code> で削除。</li>
+        <li><b>消滅待ち：</b><code>_spin_settle(0.3)</code> で削除の適用と同名モデル登録の解放を待つ。</li>
+        <li><b>spawn：</b>SDFテンプレートから赤円柱を <code>spawn_entity</code>。失敗時は「再delete→待機→再spawn」を<b>最大5回リトライ</b>。</li>
+      </ol>
+      <p class="kv">move/再利用経路は撤去（<code>set_entity_state</code> は不使用）。reset との競合が無くなり、全エピソードで安定して円柱が表示される。
+      RViz には常に <code>rl_goal_marker</code>（赤球）も publish され可視化は二重化。</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>不具合の真因と対策（記録）</h3>
+    <ul>
+      <li><b>症状：</b>ep1 のみ円柱が正常表示。ep2/ep3 で「表示されない」または「一瞬出て消える」。</li>
+      <li><b>真因：</b><code>/reset_simulation</code> はワールドを起動時状態へ戻すため<b>ランタイム spawn したゴールを消去</b>し、しかもその処理が<b>非同期で後から適用</b>される。旧実装の move/再利用経路がこれと競合し、spawn 直後のゴールが reset 後処理で消されていた。</li>
+      <li><b>対策：</b>全エピソードを「reset 完全適用待ち → 新規 spawn」に統一（本節の手順）。ep 依存の分岐を排除し決定的化。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 7. 実行手順 ============ -->
+<section id="s7">
+  <h2>7. 実行手順（クイックリファレンス）</h2>
+  <div class="card">
+<pre># 依存インストール
+pip install "gymnasium>=0.29" "stable-baselines3[extra]>=2.3" torch numpy
+sudo apt install ros-humble-gazebo-ros-pkgs ros-humble-visualization-msgs
+
+# ビルド
+cd ~/.../yahboomcar_ws
+colcon build --packages-select yahboomcar_rl && source install/setup.bash
+
+# 1) Gazebo 起動（別ターミナル）※ init/factory プラグイン付きで起動すること
+ros2 launch yahboomcar_description display_gazebo.launch.py
+#   （手動起動する場合は必ずプラグインを付ける）
+#   gazebo --verbose -s libgazebo_ros_init.so -s libgazebo_ros_factory.so
+
+# 2) 動作確認（全エピソードでゴール円柱が表示されるか）
+ros2 run yahboomcar_rl random_agent --episodes 3
+
+# 3) 検証：P制御で必ず到達（環境の end-to-end チェック）
+ros2 run yahboomcar_rl demo_reach --goal-x 1.5 --goal-y 0.5
+
+# 4) 学習
+ros2 run yahboomcar_rl train --timesteps 50000 --algo ppo --save-dir ~/rl_models
+tensorboard --logdir ~/rl_models
+
+# 5) 評価
+ros2 run yahboomcar_rl evaluate --model ~/rl_models/&lt;run&gt;/ppo_final.zip --episodes 10</pre>
+  </div>
+  <div class="note">
+    <b>デジタルツイン化への発展（README準拠）：</b>
+    ①実機odom/IMUをEnvへ直結 → ②resetを実機手動復帰＋RVizクリック目標入力に置換 →
+    ③摩擦/慣性/遅延のドメインランダマイズでSim-to-Realギャップ低減 →
+    ④2D LiDAR追加で障害物回避タスクへ拡張。
+  </div>
+</section>
+
+</main>
+<footer>
+  yahboomcar_rl 強化学習処理 仕様レポート ／ 自動生成ドキュメント
+</footer>
+</body>
+</html>
